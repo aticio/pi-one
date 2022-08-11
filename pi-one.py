@@ -1,88 +1,109 @@
+import logging
 import websocket
 import json
-from datetime import datetime
-import requests
+import logging.handlers
+import schedule
 import time
-from multiprocessing import Process
-from legitindicators import super_smoother
+import os
+from datetime import datetime
 
-EXCHANGE_INFO = "https://api.binance.com/api/v3/exchangeInfo"
-KLINE_URL = "https://api.binance.com/api/v3/klines"
 
-KLINE_INTERVAL = "1d"
-KLINE_LIMIT = 30
+cwd = os.path.dirname(os.path.realpath(__file__))
+os.chdir(cwd)
 
+SYMBOL = "MASKBUSD"
+QUOTE = "BUSD"
 
 def main():
-    exchange_info = get_exchange_info()
-    pairs = get_pairs(exchange_info)
-    busd_pairs = filter_busd_pairs(pairs)
-    for bp in busd_pairs:
-        p = Process(target=init_ops, args=(bp,))
-        p.start() 
+    configure_logs()
 
 
-def init_ops(pair):
-    klines = get_kline(pair, KLINE_INTERVAL, KLINE_LIMIT)
-    open, high, _, close = get_ohlc(klines)
-    fall_short = 0
-    for i, _ in enumerate(klines):
-        if high[i] - open[i] < open[i] * 0.01:
-            fall_short = fall_short + 1
+    now = datetime.now()
+
+    current_time = now.strftime("%H:%M:%S")
+    logging.info(current_time)
+    schedule.every().day.at("00:00").do(job)
+
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+
+
+def job():
+    # BUY
     
-    if fall_short == 0:
-        ss = super_smoother(close, 20)
-        if close[-1] > ss[-1]:
-            print(pair)
+    # TRACK
+    # SELL
+
+
+def enter_long(brick):
+    logging.info("Opening long position.")
+
+    logging.info("Getting spot account balance")
+    balance = get_spot_balance(QUOTE)
+
+    if not balance:
+        return
+
+    logging.info(f"Quote balance: {balance} {QUOTE}")
+
+    share = (balance * POSITION_RISK) / (BRICK_SIZE * 2)
+
+    if share * brick["close"] > balance:
+        order_amount = balance
+    else:
+        order_amount = share * brick["close"]
+
+    order_response = spot_order_quote(
+        SYMBOL,
+        "BUY",
+        "MARKET",
+        algoutils.truncate_ceil(order_amount, 6))
+
+    if not order_response:
+        return
 
 
 
+# Spot account trade functions
+def get_spot_balance(asset):
+    timestamp = algoutils.get_current_timestamp()
 
-def get_ohlc(klines):
-    open = [float(o[1]) for o in klines]
-    high = [float(h[2]) for h in klines]
-    low = [float(l[3]) for l in klines]
-    close = [float(c[4]) for c in klines]
-    return open, high, low, close
+    params = {"timestamp": timestamp, "recvWindow": 5000}
+    query_string = urlencode(params)
+    params["signature"] = hmac.new(SECRET.encode(
+        "utf-8"), query_string.encode("utf-8"), hashlib.sha256).hexdigest()
 
+    headers = {"X-MBX-APIKEY": API_KEY}
 
-def get_high(klines):
-    high = [float(d[2]) for d in klines]
-    return high
-
-def get_kline(kline_symbol, kline_interval, kline_limit):
     try:
-        params = {"symbol": kline_symbol, "interval": kline_interval, "limit": kline_limit}
         response = requests.get(
-            url=f"{KLINE_URL}", params=params)
+            url=f"{BINANCE_URL}{SPOT_ACCOUNT_PATH}",
+            params=params, headers=headers)
         response.raise_for_status()
-        kline = response.json()
-        # kline = kline[:-1]
-        return kline
+        data = response.json()
+
+        for _, balance in enumerate(data["balances"]):
+            if balance["asset"] == asset:
+                return float(balance["free"])
     except requests.exceptions.RequestException as err:
-        print(err)
+        logging.error(err)
         return None
 
 
-def filter_busd_pairs(pairs):
-    busd_paris = []
-    for pair in pairs:
-        if "BUSD" in pair and "USDT" not in pair:
-            busd_paris.append(pair)
-    return busd_paris
+# Preperation functions
+def configure_logs():
+    handler = logging.handlers.RotatingFileHandler(
+        cwd + "/logs/" + SYMBOL + "_pos_tracker.log",
+        maxBytes=10000000, backupCount=5)
 
+    formatter = logging.Formatter(
+        "%(asctime)s %(message)s", "%Y-%m-%d_%H:%M:%S")
+    handler.setFormatter(formatter)
 
-def get_pairs(exchange_info):
-    pairs = []
-    for symbol in exchange_info["symbols"]:
-        pairs.append(symbol["symbol"])
-    return pairs
-
-
-def get_exchange_info():
-    response = requests.get(EXCHANGE_INFO)
-    exchange_info = response.json()
-    return exchange_info
+    logger = logging.getLogger()
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
 
 
 if __name__ == "__main__":
