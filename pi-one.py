@@ -6,39 +6,64 @@ import schedule
 import time
 import os
 from datetime import datetime
+import configparser
+import algoutils
+from urllib.parse import urlencode
+import hmac
+import hashlib
+import requests
 
 
 cwd = os.path.dirname(os.path.realpath(__file__))
 os.chdir(cwd)
 
-SYMBOL = "MASKBUSD"
-QUOTE = "BUSD"
+# Configparser init
+cp = configparser.ConfigParser()
+cp.read(cwd + "/config.ini")
+
+# Context info
+BINANCE_URL = cp["context"]["BinanceUrl"]
+BINANCE_WEBSOCKET_ADDRESS = cp["context"]["BinanceWebSocketAddress"]
+SPOT_ACCOUNT_PATH = cp["context"]["SpotAccountPath"]
+SPOT_ORDER_PATH = cp["context"]["SpotOrderPath"]
+
+# Market related variables
+QUOTE = cp["data"]["Quote"]
+INTERVAL = cp["data"]["Interval"]
+SYMBOL = cp["data"]["Symbol"]
+BASE = cp["data"]["Base"]
+QUOTE = cp["data"]["Quote"]
+STEP_SIZE = int(cp["data"]["StepSize"])
+
+# Auth
+API_KEY = os.getenv("BINANCE_API_KEY")
+SECRET = os.getenv("BINANCE_API_SECRET")
 
 def main():
     configure_logs()
 
-
     now = datetime.now()
-
     current_time = now.strftime("%H:%M:%S")
     logging.info(current_time)
-    schedule.every().day.at("00:00").do(job)
+    # schedule.every().day.at("00:00").do(job)
 
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
+    # while True:
+    #     schedule.run_pending()
+    #     time.sleep(1)
+
+    job()
 
 
 def job():
     # BUY
-    
+    enter_long()
     # TRACK
     # SELL
 
 
-def enter_long(brick):
+# Position related functions
+def enter_long():
     logging.info("Opening long position.")
-
     logging.info("Getting spot account balance")
     balance = get_spot_balance(QUOTE)
 
@@ -47,21 +72,14 @@ def enter_long(brick):
 
     logging.info(f"Quote balance: {balance} {QUOTE}")
 
-    share = (balance * POSITION_RISK) / (BRICK_SIZE * 2)
+    # order_response = spot_order_quote(
+    #     SYMBOL,
+    #     "BUY",
+    #     "MARKET",
+    #     algoutils.truncate_ceil(order_amount, 6))
 
-    if share * brick["close"] > balance:
-        order_amount = balance
-    else:
-        order_amount = share * brick["close"]
-
-    order_response = spot_order_quote(
-        SYMBOL,
-        "BUY",
-        "MARKET",
-        algoutils.truncate_ceil(order_amount, 6))
-
-    if not order_response:
-        return
+    # if not order_response:
+    #     return
 
 
 
