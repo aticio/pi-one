@@ -22,8 +22,23 @@ WATCHLIST = []
 PRICE_DATA = {}
 
 def main():
+    exchange_info = get_exchange_info()
+    pairs = get_pairs(exchange_info)
+    for pair in pairs:
+        PRICE_DATA[pair] = []
     init_stream()
 
+
+def get_pairs(exchange_info):
+    pairs = []
+    for symbol in exchange_info["symbols"]:
+        pairs.append(symbol["symbol"])
+    return pairs
+
+def get_exchange_info():
+    response = requests.get(BINANCE_URL + EXCHANGE_INFO)
+    exchange_info = response.json()
+    return exchange_info
 
 
 # Websocket functions
@@ -58,13 +73,15 @@ def on_message(w_s, message):
 
     for t in ticker_data:
         if "BUSD" in t["s"] and "USDT" not in t["s"]:
-            if len(PRICE_DATA[t["s"]]) == 180:
-                PRICE_DATA[t["s"]].pop(0)
             PRICE_DATA[t["s"]].append(t["c"])
+            if len(PRICE_DATA["BTCBUSD"]) == 180:
+                PRICE_DATA[t["s"]].pop(0)
+
             if t['s'] not in WATCHLIST:
                 anomaly = check_anomaly(PRICE_DATA[t["s"]])
                 if anomaly:
-                    print("open pos")
+                    WATCHLIST.append(t['s'])
+                    
 
 
 def check_anomaly(prices):
