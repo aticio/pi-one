@@ -6,6 +6,7 @@ import time
 import algoutils
 import os
 import configparser
+import logging
 
 cwd = os.path.dirname(os.path.realpath(__file__))
 os.chdir(cwd)
@@ -14,26 +15,35 @@ os.chdir(cwd)
 cp = configparser.ConfigParser()
 cp.read(cwd + "/config.ini")
 
+
 BINANCE_URL = cp["context"]["BinanceUrl"]
 BINANCE_WEBSOCKET_ADDRESS = cp["context"]["BinanceWebSocketAddress"]
 EXCHANGE_INFO = cp["context"]["ExchangeInfo"]
 
-WATCHLIST = []
 PRICE_DATA = {}
 
+POS_PRICE = 0.0
+EXIT_PRICE = 0.0
+IN_POSITION = False
+SELECTED_PAIR = ""
+
+
 def main():
+    configure_logs()
     exchange_info = get_exchange_info()
-    pairs = get_pairs(exchange_info)
+    pairs = get_busd_pairs(exchange_info)
     for pair in pairs:
         PRICE_DATA[pair] = []
     init_stream()
 
 
-def get_pairs(exchange_info):
+def get_busd_pairs(exchange_info):
     pairs = []
     for symbol in exchange_info["symbols"]:
-        pairs.append(symbol["symbol"])
+        if "BUSD" in symbol["symbol"] and "USDT" not in symbol["symbol"]:
+            pairs.append(symbol["symbol"])
     return pairs
+
 
 def get_exchange_info():
     response = requests.get(BINANCE_URL + EXCHANGE_INFO)
@@ -68,20 +78,49 @@ def on_open(w_s):
 
 def on_message(w_s, message):
     global PRICE_DATA
-    global WATCHLIST
+    global SELECTED_PAIR
+
     ticker_data = json.loads(message)
 
     for t in ticker_data:
         if "BUSD" in t["s"] and "USDT" not in t["s"]:
             PRICE_DATA[t["s"]].append(t["c"])
-            if len(PRICE_DATA["BTCBUSD"]) == 180:
+            if len(PRICE_DATA[t["s"]]) == 180:
                 PRICE_DATA[t["s"]].pop(0)
 
-            if t['s'] not in WATCHLIST:
-                anomaly = check_anomaly(PRICE_DATA[t["s"]])
-                if anomaly:
-                    WATCHLIST.append(t['s'])
+            anomaly = check_anomaly(PRICE_DATA[t["s"]])
+            if anomaly:
+                if IN_POSITION is False:
+                    SELECTED_PAIR = t["s"]
+                    enter_long(t["s"], t["c"])
+
+            if IN_POSITION is True:
+                if t["s"] == SELECTED_PAIR:
+                    if float(t["c"]) >= EXIT_PRICE:
+                        exit_long(t["s"], t["c"])
                     
+
+def enter_long(symbol, price):
+    global POS_PRICE
+    global EXIT_PRICE
+    global IN_POSITION
+
+    IN_POSITION = True
+    POS_PRICE = price
+    EXIT_PRICE = price + (price * 0.01)
+    print("opening long position")
+
+
+def exit_long(symbol, price):
+    global POS_PRICE
+    global EXIT_PRICE
+    global IN_POSITION
+
+    print("closing long position")
+
+    POS_PRICE = 0.0
+    EXIT_PRICE = 0.0
+    IN_POSITION = False
 
 
 def check_anomaly(prices):
@@ -91,6 +130,21 @@ def check_anomaly(prices):
             anomaly = True
             break
     return anomaly
+
+
+# Preperation functions
+def configure_logs():
+    handler = logging.handlers.RotatingFileHandler(
+        cwd + "/logs/pi_one.log",
+        maxBytes=10000000, backupCount=5)
+
+    formatter = logging.Formatter(
+        "%(asctime)s %(message)s", "%Y-%m-%d_%H:%M:%S")
+    handler.setFormatter(formatter)
+
+    logger = logging.getLogger()
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
 
 
 if __name__ == "__main__":
