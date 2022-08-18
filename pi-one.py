@@ -1,8 +1,11 @@
 import websocket
 import json
 from datetime import datetime
+import hmac
+import hashlib
 import requests
-import time
+import algoutils
+from urllib.parse import urlencode
 import algoutils
 import os
 import configparser
@@ -19,6 +22,14 @@ cp.read(cwd + "/config.ini")
 BINANCE_URL = cp["context"]["BinanceUrl"]
 BINANCE_WEBSOCKET_ADDRESS = cp["context"]["BinanceWebSocketAddress"]
 EXCHANGE_INFO = cp["context"]["ExchangeInfo"]
+SPOT_ORDER_PATH = cp["context"]["SpotOrderPath"]
+SPOT_ACCOUNT_PATH = cp["context"]["SpotAccountPath"]
+
+QUOTE = cp["data"]["Quote"]
+
+# Auth
+API_KEY = os.getenv("BINANCE_API_KEY")
+SECRET = os.getenv("BINANCE_API_SECRET")
 
 PRICE_DATA = {}
 
@@ -30,10 +41,15 @@ SELECTED_PAIR = ""
 
 def main():
     configure_logs()
+    logging.info("Happy trading.")
+
+    logging.info("Getting pairs")
     exchange_info = get_exchange_info()
     pairs = get_busd_pairs(exchange_info)
     for pair in pairs:
         PRICE_DATA[pair] = []
+    
+    logging.info("Initiating websocket stream")
     init_stream()
 
 
@@ -90,6 +106,7 @@ def on_message(w_s, message):
 
             anomaly = check_anomaly(PRICE_DATA[t["s"]])
             if anomaly:
+                logging.info(f"Anomaly detected: {t['s']}: {t['c']}")
                 if IN_POSITION is False:
                     SELECTED_PAIR = t["s"]
                     enter_long(t["s"], t["c"])
@@ -108,7 +125,25 @@ def enter_long(symbol, price):
     IN_POSITION = True
     POS_PRICE = price
     EXIT_PRICE = price + (price * 0.01)
-    print("opening long position")
+
+    logging.info("Opening long position.")
+
+    logging.info("Getting spot account balance")
+    balance = get_spot_balance(QUOTE)
+
+    if not balance:
+        return
+
+    logging.info(f"Quote balance: {balance} {QUOTE}")
+
+    order_response = spot_order_quote(
+        symbol,
+        "BUY",
+        "MARKET",
+        algoutils.truncate_floor(balance, 6))
+
+    if not order_response:
+        return
 
 
 def exit_long(symbol, price):
@@ -130,6 +165,60 @@ def check_anomaly(prices):
             anomaly = True
             break
     return anomaly
+
+
+# Spot account trade functions
+def get_spot_balance(asset):
+    timestamp = algoutils.get_current_timestamp()
+
+    params = {"timestamp": timestamp, "recvWindow": 5000}
+    query_string = urlencode(params)
+    params["signature"] = hmac.new(SECRET.encode(
+        "utf-8"), query_string.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    headers = {"X-MBX-APIKEY": API_KEY}
+
+    try:
+        response = requests.get(
+            url=f"{BINANCE_URL}{SPOT_ACCOUNT_PATH}",
+            params=params, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+
+        for _, balance in enumerate(data["balances"]):
+            if balance["asset"] == asset:
+                return float(balance["free"])
+    except requests.exceptions.RequestException as err:
+        logging.error(err)
+        return None
+
+
+def spot_order_quote(order_symbol, side, type, quote_quantity):
+    timestamp = algoutils.get_current_timestamp()
+
+    params = {
+        "symbol": order_symbol, "side": side,
+        "type": type, "quoteOrderQty": quote_quantity,
+        "timestamp": timestamp, "recvWindow": 5000
+    }
+    query_string = urlencode(params)
+    params["signature"] = hmac.new(SECRET.encode(
+        "utf-8"), query_string.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    headers = {"X-MBX-APIKEY": API_KEY}
+
+    try:
+        response = requests.post(
+            url=f"{BINANCE_URL}{SPOT_ORDER_PATH}",
+            params=params,
+            headers=headers)
+        response.raise_for_status()
+        data = response.json()
+        return data
+    except requests.exceptions.RequestException as err:
+        logging.error(err)
+        logging.error(response.json())
+        return None
 
 
 # Preperation functions
