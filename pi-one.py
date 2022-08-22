@@ -1,15 +1,14 @@
 import websocket
 import json
-from datetime import datetime
 import hmac
 import hashlib
 import requests
 import algoutils
 from urllib.parse import urlencode
-import algoutils
 import os
 import configparser
 import logging
+import logging.handlers
 
 cwd = os.path.dirname(os.path.realpath(__file__))
 os.chdir(cwd)
@@ -26,12 +25,14 @@ SPOT_ORDER_PATH = cp["context"]["SpotOrderPath"]
 SPOT_ACCOUNT_PATH = cp["context"]["SpotAccountPath"]
 
 QUOTE = cp["data"]["Quote"]
+BASE = ""
 
 # Auth
 API_KEY = os.getenv("BINANCE_API_KEY")
 SECRET = os.getenv("BINANCE_API_SECRET")
 
 PRICE_DATA = {}
+STEP_SIZES = {}
 
 POS_PRICE = 0.0
 EXIT_PRICE = 0.0
@@ -48,7 +49,10 @@ def main():
     pairs = get_busd_pairs(exchange_info)
     for pair in pairs:
         PRICE_DATA[pair] = []
-    
+        STEP_SIZES[pair] = 0
+
+    collect_step_sizes(exchange_info, pairs)
+
     logging.info("Initiating websocket stream")
     init_stream()
 
@@ -59,6 +63,24 @@ def get_busd_pairs(exchange_info):
         if "BUSD" in symbol["symbol"] and "USDT" not in symbol["symbol"]:
             pairs.append(symbol["symbol"])
     return pairs
+
+
+def collect_step_sizes(exchange_info, pairs):
+    global STEP_SIZES
+
+    symbols = exchange_info["symbols"]
+    for symbol in symbols:
+        if "BUSD" in symbol["symbol"] and "USDT" not in symbol["symbol"]:
+            for filter in symbol["filters"]:
+                if filter["filterType"] == "LOT_SIZE":
+                    step = 0
+                    split_steps = filter["stepSize"].split(".")
+                    if split_steps[0] == "1":
+                        step = 0
+                    else:
+                        split_decimal = split_steps[1].find("1")
+                        step = split_decimal + 1
+                    STEP_SIZES[symbol["symbol"]] = step                
 
 
 def get_exchange_info():
@@ -101,7 +123,7 @@ def on_message(w_s, message):
     for t in ticker_data:
         if "BUSD" in t["s"] and "USDT" not in t["s"]:
             PRICE_DATA[t["s"]].append(t["c"])
-            if len(PRICE_DATA[t["s"]]) == 180:
+            if len(PRICE_DATA[t["s"]]) == 600:
                 PRICE_DATA[t["s"]].pop(0)
 
             anomaly = check_anomaly(PRICE_DATA[t["s"]])
@@ -121,7 +143,9 @@ def enter_long(symbol, price):
     global POS_PRICE
     global EXIT_PRICE
     global IN_POSITION
+    global BASE
 
+    BASE = symbol[:-4]
     IN_POSITION = True
     POS_PRICE = price
     EXIT_PRICE = price + (price * 0.01)
@@ -150,20 +174,42 @@ def exit_long(symbol, price):
     global POS_PRICE
     global EXIT_PRICE
     global IN_POSITION
+    global BASE
 
-    print("closing long position")
+    logging.info("Closing long position")
+
+    logging.info("Getting spot account balance")
+    balance = get_spot_balance(BASE)
+
+    if not balance:
+        return
+
+    amount_to_sell = algoutils.truncate_floor(balance, STEP_SIZES[symbol])
+    if STEP_SIZES[symbol] == 0:
+        amount_to_sell = int(amount_to_sell)
+    logging.info("Amount to sell %f %s", amount_to_sell, BASE)
+
+    spot_order_response = spot_order(symbol, "SELL", "MARKET", amount_to_sell)
+
+    if not spot_order_response:
+        return
+
+    logging.info("Sell order has been filled")
 
     POS_PRICE = 0.0
     EXIT_PRICE = 0.0
     IN_POSITION = False
+    BASE = ""
 
 
 def check_anomaly(prices):
     anomaly = False
-    for p in prices[60:]:
+    for p in prices[420:540]:
         if float(prices[-1]) > (float(p) + (float(p) * 0.1)):
-            anomaly = True
-            break
+            for p2 in prices[:540]:
+                if float(prices[-1]) < (float(p2) + (float(p2) * 0.2)):
+                    anomaly = True
+                    break
     return anomaly
 
 
@@ -190,6 +236,32 @@ def get_spot_balance(asset):
                 return float(balance["free"])
     except requests.exceptions.RequestException as err:
         logging.error(err)
+        return None
+
+
+def spot_order(order_symbol, side, type, quantity):
+    timestamp = algoutils.get_current_timestamp()
+
+    params = {
+        "symbol": order_symbol, "side": side, "type": type,
+        "quantity": quantity, "timestamp": timestamp, "recvWindow": 5000
+    }
+    query_string = urlencode(params)
+    params["signature"] = hmac.new(SECRET.encode(
+        "utf-8"), query_string.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    headers = {"X-MBX-APIKEY": API_KEY}
+
+    try:
+        response = requests.post(
+            url=f"{BINANCE_URL}{SPOT_ORDER_PATH}",
+            params=params, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+        return data
+    except requests.exceptions.RequestException as err:
+        logging.error(err)
+        logging.error(response.json())
         return None
 
 
