@@ -15,7 +15,7 @@ import time
 cwd = os.path.dirname(os.path.realpath(__file__))
 os.chdir(cwd)
 
-# Configparser init
+# Configparser init.
 cp = configparser.ConfigParser()
 cp.read(cwd + "/config.ini")
 
