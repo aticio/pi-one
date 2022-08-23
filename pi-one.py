@@ -37,6 +37,7 @@ API_KEY = os.getenv("BINANCE_API_KEY")
 SECRET = os.getenv("BINANCE_API_SECRET")
 
 EXIT_PRICE = 0.0
+STOP_PRICE = 0.0
 IN_STREAM = False
 
 W_S = None
@@ -46,15 +47,17 @@ def main():
     configure_logs()
     logging.info("Happy trading.")
 
-    schedule.every(10).seconds.do(init_ops)
+    schedule.every().day.at("00:00").do(init_ops)
     while True:
         schedule.run_pending()
         time.sleep(1)
 
 
 def init_ops():
+    logging.info("------------")
     global cp
     global EXIT_PRICE
+    global STOP_PRICE
     global BINANCE_WEBSOCKET_ADDRESS
     global IN_STREAM
     global SYMBOL
@@ -62,23 +65,37 @@ def init_ops():
     global QUOTE
     global STEP_SIZE
 
+    logging.info("Reading config")
     cp.read(cwd + "/config.ini")
 
     QUOTE = cp["data"]["Quote"]
     SYMBOL = cp["data"]["Symbol"]
     BASE = cp["data"]["Base"]
     exit_ratio = float(cp["data"]["ExitRatio"])
+    stop_ratio = float(cp["data"]["StopRatio"])
+
+    logging.info(f"Symbol: {SYMBOL}")
+    logging.info(f"Base: {BASE}")
+    logging.info(f"Quote: {QUOTE}")
 
     BINANCE_WEBSOCKET_ADDRESS = BINANCE_WEBSOCKET_ADDRESS.replace("symbol", str.lower(SYMBOL))
-    print(BINANCE_WEBSOCKET_ADDRESS)
+    logging.info(f"Websocket: {BINANCE_WEBSOCKET_ADDRESS}")
 
     if SYMBOL != "":
-        # enter_long()
+        enter_long()
+
         klines = get_klines(SYMBOL, "1d", 20)
         _, _, _, close = get_ohlc(klines)
         EXIT_PRICE = float(close[-1]) + (float(close[-1]) * exit_ratio)
+        STOP_PRICE = float(close[-1]) - (float(close[-1]) * stop_ratio)
+
         exchange_info = get_exchange_info(SYMBOL)
         STEP_SIZE = get_step_size(exchange_info)
+
+        logging.info(f"Last close: {close[-1]}")
+        logging.info(f"Exit price: {EXIT_PRICE}")
+        logging.info(f"Stop price: {STOP_PRICE}")
+        logging.info(f"Step size: {STEP_SIZE}")
 
         if IN_STREAM is False:
             IN_STREAM = True
@@ -156,11 +173,25 @@ def on_open(w_s):
 
 
 def on_message(w_s, message):
+    global W_S
+    global IN_STREAM
+
     t = json.loads(message)
-    
+
     if float(t["c"]) >= EXIT_PRICE:
         exit_long()
-                    
+        logging.info("Profit gained")
+        
+        IN_STREAM = False
+        W_S.on_close(W_S, 0, "close")
+    
+    if float(t["c"]) <= STOP_PRICE:
+        exit_long()
+        logging.info("Stop level reached")
+        
+        IN_STREAM = False
+        W_S.on_close(W_S, 0, "close")              
+
 
 def enter_long():
     global IN_POSITION
@@ -196,7 +227,6 @@ def exit_long():
     global QUOTE
     global IN_STREAM
     global STEP_SIZE
-    global W_S
 
     logging.info("Closing long position")
 
@@ -224,8 +254,6 @@ def exit_long():
     QUOTE = ""
     EXIT_PRICE = 0.0
     IN_STREAM = False
-
-    W_S.on_close()
 
 
 # Spot account trade functions

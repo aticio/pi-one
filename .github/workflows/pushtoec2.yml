@@ -1,30 +1,30 @@
-# name: Push-to-EC2
+name: Push-to-EC2
 
-# on: push
+on: push
 
-# jobs:
-#   deploy:
-#     name: Push to EC2 Instance
-#     runs-on: ubuntu-latest
+jobs:
+  deploy:
+    name: Push to EC2 Instance
+    runs-on: ubuntu-latest
 
-#     steps:
-#       - name: Checkout the code
-#         uses: actions/checkout@v1
+    steps:
+      - name: Checkout the code
+        uses: actions/checkout@v1
 
-#       - name: Deploy to my EC2 instance
-#         uses: easingthemes/ssh-deploy@v2.1.5
-#         env:
-#           SSH_PRIVATE_KEY: ${{ secrets.AWS_SSH_KEY }}
-#           SOURCE: "./"
-#           REMOTE_HOST: ${{ secrets.AWS_HOST }}
-#           REMOTE_USER: ${{ secrets.AWS_USER }}
-#           TARGET: "/opt/pi"
-#       - name: start app
-#         uses: appleboy/ssh-action@master
-#         with:
-#           host: ${{ secrets.AWS_HOST }}
-#           username: ${{ secrets.AWS_USER }}
-#           key: ${{ secrets.AWS_SSH_KEY }}
-#           port: 22
-#           script: |
-#             sh /opt/pi-one/appstart.sh
+      - name: Deploy to my EC2 instance
+        uses: easingthemes/ssh-deploy@v2.1.5
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.AWS_SSH_KEY }}
+          SOURCE: "./"
+          REMOTE_HOST: ${{ secrets.AWS_HOST }}
+          REMOTE_USER: ${{ secrets.AWS_USER }}
+          TARGET: "/opt/pi"
+      - name: start app
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.AWS_HOST }}
+          username: ${{ secrets.AWS_USER }}
+          key: ${{ secrets.AWS_SSH_KEY }}
+          port: 22
+          script: |
+            sh /opt/pi-one/appstart.sh
