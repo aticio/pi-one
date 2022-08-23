@@ -18,7 +18,7 @@ jobs:
           SOURCE: "./"
           REMOTE_HOST: ${{ secrets.AWS_HOST }}
           REMOTE_USER: ${{ secrets.AWS_USER }}
-          TARGET: "/opt/pi"
+          TARGET: "/opt/pi-one"
       - name: start app
         uses: appleboy/ssh-action@master
         with:
