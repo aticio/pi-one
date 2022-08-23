@@ -1,2 +1,4 @@
 algoutils
 schedule
+websocket_client
+requests
