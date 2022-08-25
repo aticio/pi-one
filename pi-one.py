@@ -47,7 +47,7 @@ def main():
     configure_logs()
     logging.info("Happy trading.")
 
-    # schedule.every(10).seconds.do(job)
+    # schedule.every(10).seconds.do(init_ops)
     schedule.every().day.at("00:00").do(init_ops)
     while True:
         schedule.run_pending()
