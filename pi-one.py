@@ -203,6 +203,7 @@ def enter_long():
     balance = get_spot_balance(QUOTE)
 
     if not balance:
+        logging.info("Problem occured. Could not get balance.")
         return
 
     logging.info(f"Quote balance: {balance} {QUOTE}")
