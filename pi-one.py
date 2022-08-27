@@ -183,14 +183,14 @@ def on_message(w_s, message):
         logging.info("Profit gained")
         
         IN_STREAM = False
-        W_S.on_close(W_S, 0, "close")
+        W_S.close()
     
     if float(t["c"]) <= STOP_PRICE:
         exit_long()
         logging.info("Stop level reached")
         
         IN_STREAM = False
-        W_S.on_close(W_S, 0, "close")              
+        W_S.close()         
 
 
 def enter_long():
