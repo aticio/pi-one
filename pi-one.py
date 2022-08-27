@@ -47,7 +47,6 @@ def main():
     configure_logs()
     logging.info("Happy trading.")
 
-    # schedule.every(10).seconds.do(init_ops)
     schedule.every().day.at("00:00").do(init_ops)
     while True:
         schedule.run_pending()
@@ -148,14 +147,15 @@ def get_step_size(exchange_info):
 
 # Websocket functions
 def init_stream():
-    w_s = websocket.WebSocketApp(
+    global W_S
+    W_S = websocket.WebSocketApp(
         BINANCE_WEBSOCKET_ADDRESS,
         on_message=on_message,
         on_error=on_error,
         on_close=on_close
         )
-    w_s.on_open = on_open
-    w_s.run_forever()
+    W_S.on_open = on_open
+    W_S.run_forever()
 
 
 def on_error(w_s, error):
@@ -173,6 +173,7 @@ def on_open(w_s):
 
 
 def on_message(w_s, message):
+    global W_S
     global IN_STREAM
 
     t = json.loads(message)
@@ -182,14 +183,14 @@ def on_message(w_s, message):
         logging.info("Profit gained")
         
         IN_STREAM = False
-        exit(0)
+        W_S.on_close(W_S, 0, "close")
     
     if float(t["c"]) <= STOP_PRICE:
         exit_long()
         logging.info("Stop level reached")
         
         IN_STREAM = False
-        exit(0)              
+        W_S.on_close(W_S, 0, "close")              
 
 
 def enter_long():
@@ -203,7 +204,6 @@ def enter_long():
     balance = get_spot_balance(QUOTE)
 
     if not balance:
-        logging.info("Problem occured. Could not get balance.")
         return
 
     logging.info(f"Quote balance: {balance} {QUOTE}")
