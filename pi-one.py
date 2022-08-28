@@ -15,7 +15,7 @@ import time
 cwd = os.path.dirname(os.path.realpath(__file__))
 os.chdir(cwd)
 
-# Configparser init.
+# Configparser init
 cp = configparser.ConfigParser()
 cp.read(cwd + "/config.ini")
 
@@ -183,14 +183,14 @@ def on_message(w_s, message):
         logging.info("Profit gained")
         
         IN_STREAM = False
-        W_S.close()
+        W_S.on_close(W_S, 0, "close")
     
     if float(t["c"]) <= STOP_PRICE:
         exit_long()
         logging.info("Stop level reached")
         
         IN_STREAM = False
-        W_S.close()         
+        W_S.on_close(W_S, 0, "close")              
 
 
 def enter_long():
@@ -202,7 +202,7 @@ def enter_long():
 
     logging.info("Getting spot account balance")
     balance = get_spot_balance(QUOTE)
-
+    logging.info("Got balance")
     if not balance:
         return
 
@@ -258,8 +258,10 @@ def exit_long():
 
 # Spot account trade functions
 def get_spot_balance(asset):
+    logging.info("in get_spot_balance")
     timestamp = algoutils.get_current_timestamp()
 
+    logging.info("got timestamp")
     params = {"timestamp": timestamp, "recvWindow": 5000}
     query_string = urlencode(params)
     params["signature"] = hmac.new(SECRET.encode(
@@ -268,14 +270,16 @@ def get_spot_balance(asset):
     headers = {"X-MBX-APIKEY": API_KEY}
 
     try:
+        logging.info("trying request")
         response = requests.get(
             url=f"{BINANCE_URL}{SPOT_ACCOUNT_PATH}",
             params=params, headers=headers)
         response.raise_for_status()
         data = response.json()
-
+        logging.info("got response")
         for _, balance in enumerate(data["balances"]):
             if balance["asset"] == asset:
+                logging.info("found asset")
                 return float(balance["free"])
     except requests.exceptions.RequestException as err:
         logging.error(err)
