@@ -267,8 +267,10 @@ def get_spot_balance(asset):
     params["signature"] = hmac.new(SECRET.encode(
         "utf-8"), query_string.encode("utf-8"), hashlib.sha256).hexdigest()
 
+    logging.info(params)
     headers = {"X-MBX-APIKEY": API_KEY}
 
+    logging.info("before try")
     try:
         logging.info("trying request")
         response = requests.get(
@@ -281,7 +283,7 @@ def get_spot_balance(asset):
             if balance["asset"] == asset:
                 logging.info("found asset")
                 return float(balance["free"])
-    except requests.exceptions.RequestException as err:
+    except Exception as err:
         logging.error(err)
         return None
 
