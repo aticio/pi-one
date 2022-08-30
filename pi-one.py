@@ -258,31 +258,37 @@ def exit_long():
 
 # Spot account trade functions
 def get_spot_balance(asset):
-    logging.info("in get_spot_balance")
-    timestamp = algoutils.get_current_timestamp()
-
-    logging.info("got timestamp")
-    params = {"timestamp": timestamp, "recvWindow": 5000}
-    query_string = urlencode(params)
-    params["signature"] = hmac.new(SECRET.encode(
-        "utf-8"), query_string.encode("utf-8"), hashlib.sha256).hexdigest()
-
-    logging.info(params)
-    headers = {"X-MBX-APIKEY": API_KEY}
-
-    logging.info("before try")
     try:
-        logging.info("trying request")
-        response = requests.get(
-            url=f"{BINANCE_URL}{SPOT_ACCOUNT_PATH}",
-            params=params, headers=headers)
-        response.raise_for_status()
-        data = response.json()
-        logging.info("got response")
-        for _, balance in enumerate(data["balances"]):
-            if balance["asset"] == asset:
-                logging.info("found asset")
-                return float(balance["free"])
+        logging.info("in get_spot_balance")
+        timestamp = algoutils.get_current_timestamp()
+
+        logging.info("got timestamp")
+        params = {"timestamp": timestamp, "recvWindow": 5000}
+        logging.info("params created")
+        query_string = urlencode(params)
+        logging.info("query string created")
+        params["signature"] = hmac.new(SECRET.encode(
+            "utf-8"), query_string.encode("utf-8"), hashlib.sha256).hexdigest()
+        
+        logging.info(params)
+        headers = {"X-MBX-APIKEY": API_KEY}
+
+        logging.info("before try")
+        try:
+            logging.info("trying request")
+            response = requests.get(
+                url=f"{BINANCE_URL}{SPOT_ACCOUNT_PATH}",
+                params=params, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+            logging.info("got response")
+            for _, balance in enumerate(data["balances"]):
+                if balance["asset"] == asset:
+                    logging.info("found asset")
+                    return float(balance["free"])
+        except Exception as err:
+            logging.error(err)
+            return None
     except Exception as err:
         logging.error(err)
         return None
